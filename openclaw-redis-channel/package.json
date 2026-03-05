@@ -1,0 +1,42 @@
+{
+  "name": "@HTMLgtMK/redis-channel",
+  "version": "1.1.2",
+  "description": "OpenClaw Channel plugin for Redis Pub/Sub messaging",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "openclaw": {
+    "extensions": ["index.js"]
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test:pub": "ts-node scripts/test-publish.ts",
+    "test:sub": "ts-node scripts/test-subscribe.ts",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["openclaw", "plugin", "channel", "redis", "pubsub"],
+  "license": "MIT",
+  "dependencies": {
+    "redis": "^4.6.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "commander": "^11.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  },
+  "peerDependencies": {
+    "openclaw": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  openclaw:
+    image: openclaw/latest
+    depends_on:
+      - redis
+    volumes:
+      - ./config:/opt/openclaw/config
+      - ../dist:/opt/openclaw/extensions/redis-channel/dist:ro
+      - ../openclaw.plugin.json:/opt/openclaw/extensions/redis-channel/openclaw.plugin.json:ro
+      - ../package.json:/opt/openclaw/extensions/redis-channel/package.json:ro
+    environment:
+      - REDIS_URL=redis://redis:6379
+
+volumes:
+  redis-data:
