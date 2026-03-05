@@ -76,7 +76,20 @@ npm run test:sub -- -d "device-id"
 
 ## Recent Actions
 
-### v1.1.2 - Heartbeat Feature (Latest)
+### v1.1.3 - Redis v4.x Compatibility Fixes (Latest)
+- ✅ Fixed heartbeat: `setex()` → `set(key, value, { EX: 60 })` for Redis v4.x compatibility
+- ✅ Fixed subscribe: `await subscriber.subscribe()` - returns Promise that resolves when subscription is active
+- ✅ Fixed subscriber creation: `duplicate()` requires explicit `connect()` call
+- ✅ Improved error logging in heartbeat: extract error message instead of logging object
+- ✅ Updated `init-project.sh` with all fixes
+- ✅ Script syntax validated with `bash -n`
+
+**Reference**: [node-redis Pub/Sub documentation](https://github.com/redis/node-redis/blob/master/docs/pub-sub.md)
+- `subscribe()` returns a Promise - must await
+- `duplicate()` creates disconnected client - must call `connect()`
+- Use `set(key, value, { EX: ttl })` instead of `setex()`
+
+### v1.1.2 - Heartbeat Feature
 - ✅ Created `src/lib/heartbeat.ts` with `HeartbeatManager` class
 - ✅ Integrated heartbeat into `src/index.ts` (starts on connect, stops on abort/stop)
 - ✅ Added `heartbeatInterval` config option (default: 20000ms)
@@ -103,7 +116,7 @@ npm run test:sub -- -d "device-id"
 - ✅ Updated `openclaw.plugin.json` schema (required: `["redisUrl", "deviceId"]`)
 
 ### Infrastructure
-- ✅ Updated `init-project.sh` to generate complete v1.1.2 project
+- ✅ Updated `init-project.sh` to generate complete v1.1.3 project
 - ✅ Script syntax validated with `bash -n`
 
 ## Current Plan
@@ -137,8 +150,9 @@ npm run test:sub -- -d "device-id"
    - v1.1.0: Added deviceId/deviceName, default channel logic
    - v1.1.1: API sync (startAccount, abortSignal, Feishu)
    - v1.1.2: Heartbeat functionality
+   - v1.1.3: Redis v4.x compatibility fixes (`setex` → `set`, `duplicate()` needs `connect()`, `subscribe()` returns Promise)
 
 ---
 
 ## Summary Metadata
-**Update time**: 2026-03-05T03:56:09.093Z 
+**Update time**: 2026-03-05T10:45:00.000Z 

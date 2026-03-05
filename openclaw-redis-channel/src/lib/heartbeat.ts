@@ -34,15 +34,15 @@ export class HeartbeatManager {
       try {
         const { redisClient, config, logger } = this.deps;
         if (redisClient && config) {
-          await redisClient.setex(
-            `devices:${config.deviceId}:heartbeat`,
-            60, // 过期时间 60 秒
-            Date.now().toString()
-          );
+          const key = `devices:${config.deviceId}:heartbeat`;
+          const value = Date.now().toString();
+          // Redis v4.x: use set with EX option instead of setex
+          await redisClient.set(key, value, { EX: 60 });
           logger.debug?.(`💓 Heartbeat sent for device: ${config.deviceId}`);
         }
       } catch (error) {
-        this.deps.logger.error?.(`❌ Heartbeat failed:`, error);
+        const err = error instanceof Error ? error.message : String(error);
+        this.deps.logger.error?.(`❌ Heartbeat failed: ${err}`);
       }
     }, heartbeatInterval);
 

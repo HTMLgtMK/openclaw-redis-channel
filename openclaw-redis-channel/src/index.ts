@@ -158,6 +158,7 @@ const redisChannelPlugin: ChannelPlugin = {
         }
       };
 
+      // Redis v4.x: subscribe 返回 Promise，需要 await 确保订阅完成
       await subscriber.subscribe(subscribeChannel, (message: string) => {
         handleInboundMessage(message, redisConfig, handlerDeps);
       });

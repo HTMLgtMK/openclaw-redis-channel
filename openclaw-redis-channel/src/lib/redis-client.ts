@@ -34,7 +34,12 @@ export class RedisClientManager {
 
   static async createSubscriber(config: RedisChannelAccountConfig): Promise<RedisClientAny> {
     const mainClient = await this.getClient(config);
-    return mainClient.duplicate();
+    const subscriber = mainClient.duplicate();
+    // duplicate() 创建的客户端需要显式连接
+    if (!subscriber.isOpen) {
+      await subscriber.connect();
+    }
+    return subscriber;
   }
 
   static async closeAll(): Promise<void> {

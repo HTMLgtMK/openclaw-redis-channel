@@ -451,7 +451,12 @@ export class RedisClientManager {
 
   static async createSubscriber(config: RedisChannelAccountConfig): Promise<RedisClientAny> {
     const mainClient = await this.getClient(config);
-    return mainClient.duplicate();
+    const subscriber = mainClient.duplicate();
+    // duplicate() 创建的客户端需要显式连接
+    if (!subscriber.isOpen) {
+      await subscriber.connect();
+    }
+    return subscriber;
   }
 
   static async closeAll(): Promise<void> {
@@ -640,15 +645,15 @@ export class HeartbeatManager {
       try {
         const { redisClient, config, logger } = this.deps;
         if (redisClient && config) {
-          await redisClient.setex(
-            `devices:${config.deviceId}:heartbeat`,
-            60, // 过期时间 60 秒
-            Date.now().toString()
-          );
+          const key = `devices:${config.deviceId}:heartbeat`;
+          const value = Date.now().toString();
+          // Redis v4.x: use set with EX option instead of setex
+          await redisClient.set(key, value, { EX: 60 });
           logger.debug?.(`💓 Heartbeat sent for device: ${config.deviceId}`);
         }
       } catch (error) {
-        this.deps.logger.error?.(`❌ Heartbeat failed:`, error);
+        const err = error instanceof Error ? error.message : String(error);
+        this.deps.logger.error?.(`❌ Heartbeat failed: ${err}`);
       }
     }, heartbeatInterval);
 
@@ -833,6 +838,7 @@ const redisChannelPlugin: ChannelPlugin = {
         }
       };
 
+      // Redis v4.x: subscribe 返回 Promise，需要 await 确保订阅完成
       await subscriber.subscribe(subscribeChannel, (message: string) => {
         handleInboundMessage(message, redisConfig, handlerDeps);
       });
