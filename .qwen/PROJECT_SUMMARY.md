@@ -76,7 +76,16 @@ npm run test:sub -- -d "device-id"
 
 ## Recent Actions
 
-### v1.1.3 - Redis v4.x Compatibility Fixes (Latest)
+### v1.1.4 - Fix Duplicate Subscription & Remove Feishu Forwarding (Latest)
+- ✅ Added `RedisClientManager.closeSubscriber()` to properly close subscriber connections
+- ✅ Updated `stop()` and `abort` handlers to call `closeSubscriber(subscriber)`
+- ✅ Removed Feishu notification forwarding from `emitMessage()` - messages now go directly to OpenClaw agent
+- ✅ Simplified `emitMessage()` to only log received messages
+- ✅ Fixed root cause of duplicate messages: subscriber connections were never closed on restart
+- ✅ Updated `init-project.sh` with all fixes
+- ✅ Build verified with `npm run build`
+
+### v1.1.3 - Redis v4.x Compatibility Fixes
 - ✅ Fixed heartbeat: `setex()` → `set(key, value, { EX: 60 })` for Redis v4.x compatibility
 - ✅ Fixed subscribe: `await subscriber.subscribe()` - returns Promise that resolves when subscription is active
 - ✅ Fixed subscriber creation: `duplicate()` requires explicit `connect()` call
@@ -116,7 +125,7 @@ npm run test:sub -- -d "device-id"
 - ✅ Updated `openclaw.plugin.json` schema (required: `["redisUrl", "deviceId"]`)
 
 ### Infrastructure
-- ✅ Updated `init-project.sh` to generate complete v1.1.3 project
+- ✅ Updated `init-project.sh` to generate complete v1.1.4 project
 - ✅ Script syntax validated with `bash -n`
 
 ## Current Plan
@@ -151,8 +160,9 @@ npm run test:sub -- -d "device-id"
    - v1.1.1: API sync (startAccount, abortSignal, Feishu)
    - v1.1.2: Heartbeat functionality
    - v1.1.3: Redis v4.x compatibility fixes (`setex` → `set`, `duplicate()` needs `connect()`, `subscribe()` returns Promise)
+   - v1.1.4: Fix duplicate subscription (add `closeSubscriber()`), remove Feishu forwarding
 
 ---
 
 ## Summary Metadata
-**Update time**: 2026-03-05T10:45:00.000Z 
+**Update time**: 2026-03-05T11:30:00.000Z 

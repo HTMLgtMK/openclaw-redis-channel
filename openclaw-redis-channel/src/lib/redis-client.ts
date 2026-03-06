@@ -42,6 +42,19 @@ export class RedisClientManager {
     return subscriber;
   }
 
+  /**
+   * 关闭 subscriber 客户端
+   */
+  static async closeSubscriber(subscriber: RedisClientAny): Promise<void> {
+    if (subscriber && subscriber.isOpen) {
+      try {
+        await subscriber.quit();
+      } catch (err) {
+        console.error('Failed to close subscriber:', err);
+      }
+    }
+  }
+
   static async closeAll(): Promise<void> {
     for (const [key, client] of this.clients) {
       try {

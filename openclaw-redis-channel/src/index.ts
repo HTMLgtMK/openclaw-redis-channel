@@ -139,22 +139,8 @@ const redisChannelPlugin: ChannelPlugin = {
       const handlerDeps: MessageHandlerDeps = {
         logger: log,
         emitMessage: (msg) => {
-          // 显示消息日志
+          // emitMessage 会将消息交给 OpenClaw agent 处理
           log?.info?.(`[${accountId}] 📥 收到消息：${msg.senderName} - ${msg.text.slice(0, 100)}`);
-
-          // 发送通知到飞书
-          const notificationText = `📨 从 *${msg.senderName}* 发送：\n\n${msg.text}`;
-
-          // 使用 OpenClaw CLI 发送消息到飞书
-          const { exec } = require('child_process');
-          const escapedText = notificationText.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-          exec(`openclaw message send --target "feishu" --message "${escapedText}"`, (error: Error | null) => {
-            if (error) {
-              log?.warn?.(`[${accountId}] ⚠️ 转发到飞书失败`);
-            } else {
-              log?.debug?.(`[${accountId}] ✅ 已转发到飞书`);
-            }
-          });
         }
       };
 
@@ -171,6 +157,7 @@ const redisChannelPlugin: ChannelPlugin = {
         log?.info?.(`[${accountId}] 🔌 Stopping Redis channel (abort signal received)`);
         heartbeat.stop();
         await subscriber.unsubscribe(subscribeChannel);
+        await RedisClientManager.closeSubscriber(subscriber);
         await RedisClientManager.closeClient(redisConfig);
         log?.info?.(`[${accountId}] ✅ Redis channel disconnected`);
       });
@@ -180,6 +167,7 @@ const redisChannelPlugin: ChannelPlugin = {
           log?.info?.(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
           heartbeat.stop();
           await subscriber.unsubscribe(subscribeChannel);
+          await RedisClientManager.closeSubscriber(subscriber);
           await RedisClientManager.closeClient(redisConfig);
           log?.info?.(`[${accountId}] ✅ Redis channel disconnected`);
         },
