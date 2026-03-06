@@ -1,8 +1,8 @@
-import type { 
-  ChannelPlugin 
+import type {
+  ChannelPlugin
 } from 'openclaw/plugin-sdk/channels/plugins/types.plugin';
 import type { OpenClawPluginApi as ChannelPluginAPI } from 'openclaw/plugin-sdk';
-import type { 
+import type {
   OpenClawConfig,
   ChannelGatewayContext,
   ChannelOutboundContext,
@@ -12,6 +12,7 @@ import type {
   ChannelConfigSchema,
   ChannelConfigAdapter
 } from 'openclaw/plugin-sdk';
+import type { ChannelStatusAdapter, ChannelStatusIssue, ChannelAccountSnapshot } from 'openclaw/plugin-sdk/channels/plugins/types';
 
 import { RedisClientManager } from './lib/redis-client';
 import { handleInboundMessage, MessageHandlerDeps } from './lib/message-handler';
@@ -21,15 +22,18 @@ import { HeartbeatManager } from './lib/heartbeat';
 import globalLogger, { type ILogger } from './lib/logger';
 import { handleInboundMessageDispatch } from './lib/message-dispatcher';
 
+// Get version from package.json
+const VERSION = require('../package.json').version;
+
 const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
   id: 'redis-channel',
 
   meta: {
     id: 'redis-channel',
-    label: 'Redis Channel',
+    label: `Redis Channel v${VERSION}`,
     selectionLabel: 'Redis Pub/Sub Channel',
     docsPath: '/plugins/redis-channel',
-    blurb: 'Custom messaging via Redis Pub/Sub mechanism',
+    blurb: `Custom messaging via Redis Pub/Sub mechanism (v${VERSION})`,
     aliases: ['redis', 'redis-pubsub'],
     icon: 'database',
   } as ChannelMeta,
@@ -175,7 +179,7 @@ const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
 
       const subscribeChannel = getSubscribeChannel(redisConfig);
 
-      globalLogger.info(`[${accountId}] 🔌 Starting Redis channel: ${subscribeChannel}`);
+      globalLogger.info(`[${accountId}] 🔌 Starting Redis channel v${VERSION}: ${subscribeChannel}`);
 
       const subscriber = await RedisClientManager.createSubscriber(redisConfig);
       const mainClient = await RedisClientManager.getClient(redisConfig);
@@ -199,33 +203,48 @@ const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
         }
       };
 
+      // Track if we're shutting down to prevent duplicate handlers
+      let isShuttingDown = false;
+
       // Redis v4.x: subscribe 返回 Promise，需要 await 确保订阅完成
       await subscriber.subscribe(subscribeChannel, (message: string) => {
-        handleInboundMessage(message, redisConfig, handlerDeps);
+        if (!isShuttingDown) {
+          handleInboundMessage(message, redisConfig, handlerDeps);
+        }
       });
 
       const publishChannel = getPublishChannel(redisConfig, redisConfig.deviceId);
       globalLogger.info(`[${accountId}] ✅ Redis channel connected: ${subscribeChannel} → ${publishChannel}`);
 
-      // Handle abort signal
-      abortSignal?.addEventListener('abort', async () => {
-        globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel (abort signal received)`);
+      // Store the promise to prevent premature resolution
+      const stopFunction = async () => {
+        if (isShuttingDown) return;
+        isShuttingDown = true;
+        
+        globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
         heartbeat.stop();
-        await subscriber.unsubscribe(subscribeChannel);
+        try {
+          await subscriber.unsubscribe(subscribeChannel);
+        } catch (err) {
+          globalLogger.error(`[${accountId}] Error unsubscribing during stop: ${err}`);
+        }
         await RedisClientManager.closeSubscriber(subscriber);
         await RedisClientManager.closeClient(redisConfig);
         globalLogger.info(`[${accountId}] ✅ Redis channel disconnected`);
+      };
+      
+      // Keep the channel running by returning a promise that resolves only when stopped
+      // @see https://github.com/openclaw/openclaw/issues/19854
+      await new Promise<void>((resolve) => {
+        if (isShuttingDown) { resolve(); return; }
+        abortSignal?.addEventListener('abort', ()=>{
+          stopFunction();
+          resolve();
+        }, { once: true });
       });
 
       return {
-        stop: async () => {
-          globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
-          heartbeat.stop();
-          await subscriber.unsubscribe(subscribeChannel);
-          await RedisClientManager.closeSubscriber(subscriber);
-          await RedisClientManager.closeClient(redisConfig);
-          globalLogger.info(`[${accountId}] ✅ Redis channel disconnected`);
-        },
+        stop: stopFunction,
 
         health: async () => {
           try {
@@ -240,6 +259,217 @@ const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
         },
       };
     },
+  },
+
+  status: {
+    defaultRuntime: {
+      accountId: '',
+      enabled: true,
+      configured: true,
+      linked: true,
+      running: true,
+      connected: true,
+      lastConnectedAt: null,
+      lastMessageAt: null,
+      lastEventAt: null,
+      lastError: null,
+      lastStartAt: null,
+      lastStopAt: null,
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      mode: 'normal',
+      dmPolicy: 'open',
+      allowFrom: [],
+      tokenSource: 'config',
+      botTokenSource: 'config',
+      appTokenSource: 'config',
+      credentialSource: 'config',
+      secretSource: 'config',
+      audienceType: 'public',
+      audience: 'all',
+      webhookPath: '',
+      webhookUrl: '',
+      baseUrl: '',
+      allowUnmentionedGroups: true,
+      cliPath: null,
+      dbPath: null,
+      port: null,
+      probe: {},
+      lastProbeAt: null,
+      audit: {},
+      application: {},
+      bot: {},
+      publicKey: null,
+      profile: {},
+      channelAccessToken: '',
+      channelSecret: ''
+    },
+
+    async probeAccount({ account, timeoutMs = 10000 }) {
+      try {
+        const client = await RedisClientManager.getClient(account);
+        
+        // Test connection by pinging Redis
+        const startTime = Date.now();
+        await client.ping();
+        const responseTime = Date.now() - startTime;
+        
+        // Test if we can access the subscribe channel
+        const subscribeChannel = getSubscribeChannel(account);
+        // Just verify we can interact with Redis, no need to actually subscribe here
+        
+        return {
+          ok: true,
+          responseTime,
+          serverInfo: await client.info(), // Get Redis server info
+          channels: {
+            subscribe: subscribeChannel,
+            publish: getPublishChannel(account, account.deviceId)
+          }
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+
+    async auditAccount({ account, timeoutMs = 15000 }) {
+      try {
+        const client = await RedisClientManager.getClient(account);
+        
+        // Get detailed Redis info
+        const serverInfo = await client.info();
+        const config = await client.configGet('*');
+        
+        // Get client list to see current connections
+        const clientList = await client.clientList();
+        
+        // Check for heartbeat key existence
+        const heartbeatKey = `devices:${account.deviceId}:heartbeat`;
+        const heartbeatExists = await client.exists(heartbeatKey);
+        
+        return {
+          server: {
+            info: serverInfo,
+            config: config,
+            connectedClients: clientList.length,
+          },
+          channels: {
+            subscribe: getSubscribeChannel(account),
+            publish: getPublishChannel(account, account.deviceId),
+          },
+          heartbeat: {
+            key: heartbeatKey,
+            exists: Boolean(heartbeatExists),
+          },
+          capabilities: {
+            pubsub: true,
+            keyspaceNotifications: true,
+          }
+        };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+
+    async buildAccountSnapshot({ account, cfg, runtime, probe, audit }) {
+      const snapshot = {
+        accountId: account.deviceId,
+        name: account.deviceName || account.deviceId,
+        enabled: account.enabled !== false,
+        configured: !!(account.redisUrl && account.deviceId),
+        linked: true, // Redis connection established
+        running: runtime?.running || false,
+        connected: runtime?.connected || false,
+        reconnectAttempts: runtime?.reconnectAttempts || 0,
+        lastConnectedAt: runtime?.lastConnectedAt || null,
+        lastMessageAt: runtime?.lastMessageAt || null,
+        lastEventAt: runtime?.lastEventAt || null,
+        lastError: runtime?.lastError || null,
+        lastStartAt: runtime?.lastStartAt || null,
+        lastStopAt: runtime?.lastStopAt || null,
+        lastInboundAt: runtime?.lastInboundAt || null,
+        lastOutboundAt: runtime?.lastOutboundAt || null,
+        mode: account.deviceName || 'normal',
+        dmPolicy: 'open',
+        allowFrom: [],
+        tokenSource: 'config',
+        botTokenSource: 'config',
+        appTokenSource: 'config',
+        credentialSource: 'config',
+        secretSource: 'config',
+        audienceType: 'public',
+        audience: 'all',
+        webhookPath: '',
+        webhookUrl: '',
+        baseUrl: '',
+        allowUnmentionedGroups: true,
+        cliPath: null,
+        dbPath: null,
+        port: null,
+        probe: probe || {},
+        lastProbeAt: runtime?.lastProbeAt || null,
+        audit: audit || {},
+        application: {},
+        bot: {},
+        publicKey: null,
+        profile: {},
+        channelAccessToken: '',
+        channelSecret: '',
+        // Redis-specific fields
+        redisUrl: account.redisUrl,
+        deviceId: account.deviceId,
+        subscribeChannel: getSubscribeChannel(account),
+        publishChannel: getPublishChannel(account, account.deviceId),
+        heartbeatInterval: account.heartbeatInterval || 20000,
+      };
+
+      return snapshot;
+    },
+
+    collectStatusIssues(accounts) {
+      const issues: ChannelStatusIssue[] = [];
+      
+      for (const account of accounts) {
+        // Check if account is properly configured
+        if (!(account as any).redisUrl) {
+          issues.push({
+            channel: 'redis-channel',
+            accountId: (account as any).deviceId,
+            kind: 'config',
+            message: `Redis URL not configured for device ${(account as any).deviceId}`,
+            fix: 'Set redisUrl in account configuration'
+          });
+        }
+        
+        if (!(account as any).deviceId) {
+          issues.push({
+            channel: 'redis-channel',
+            accountId: (account as any).deviceId,
+            kind: 'config',
+            message: 'Device ID not configured',
+            fix: 'Set deviceId in account configuration'
+          });
+        }
+        
+        // Check if account is enabled
+        if ((account as any).enabled === false) {
+          issues.push({
+            channel: 'redis-channel',
+            accountId: (account as any).deviceId,
+            kind: 'config',
+            message: `Account ${(account as any).deviceId} is disabled`,
+            fix: 'Set enabled: true in account configuration'
+          });
+        }
+      }
+      
+      return issues;
+    }
   },
 };
 

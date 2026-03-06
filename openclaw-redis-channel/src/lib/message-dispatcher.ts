@@ -59,23 +59,18 @@ export async function handleInboundMessageDispatch(
       dispatcherOptions: {
         responsePrefix: "",
         deliver: async (payload: any, info?: { kind: string }) => {
-          try {
-            const textToSend = payload.markdown || payload.text;
-            if (!textToSend) {
-              return;
-            }
+          const textToSend = payload.markdown || payload.text;
+          if (!textToSend) {
+            return;
+          }
 
-            // 如果有回复内容，发送回 Redis 通道
-            if (typeof textToSend === "string") {
-              const target = { id: msg.senderId }; // 回复给原发送者
-              const result = await sendOutboundMessage(textToSend, target, redisConfig);
-              if (!result.ok) {
-                globalLogger.error(`[${accountId}] Failed to send reply back to Redis: ${result.error}`);
-              }
+          // 如果有回复内容，发送回 Redis 通道
+          if (typeof textToSend === "string") {
+            const target = { id: msg.senderId }; // 回复给原发送者
+            const result = await sendOutboundMessage(textToSend, target, redisConfig);
+            if (!result.ok) {
+              globalLogger.error(`[${accountId}] Failed to send reply back to Redis: ${result.error}`);
             }
-          } catch (err: any) {
-            globalLogger.error(`[${accountId}] Reply failed: ${err.message}`);
-            throw err;
           }
         },
       },
