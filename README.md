@@ -1,29 +1,68 @@
-# OpenClaw Redis-Channel Plugin
+## 🚀 OpenClaw Redis-Channel Plugin
+
+OpenClaw Redis 消息渠道插件，支持订阅 redis 消息传递给 agent 处理，欢迎试用~
+
+
+```shell
+~$ redis-cli -h 127.0.0.1 -p 6379 PUBLISH "openclaw:device:node-sub-1" '{"senderId":"test","text":"你好， 我是cli"}'
+(integer) 1
+```
+
+![openclaw-redid-channel](./example/example-chat.png)
+
 
 通过 Redis Pub/Sub 机制实现 OpenClaw 自定义消息收发的 Channel 插件。
 
-## 🚀 快速开始
+### 快速开始
 
-### 1. 安装依赖
+#### 1. 安装依赖
 
 ```bash
 npm install --legacy-peer-deps
 ```
 
-### 2. 编译插件
+#### 2. 编译插件
 
 ```bash
 npm run build
 ```
 
-### 3. 部署到 OpenClaw
+#### 3. 部署到 OpenClaw
 
-将以下文件复制到 OpenClaw 插件目录：
+openclaw 支持以下方式安装 plugins: [plugin#cli](https://docs.openclaw.ai/zh-CN/tools/plugin#cli)
+```shell
+openclaw plugins install <path>                 # copy a local file/dir into ~/.openclaw/extensions/<id>
+openclaw plugins install ./extensions/voice-call # relative path ok
+openclaw plugins install ./plugin.tgz           # install from a local tarball
+openclaw plugins install ./plugin.zip           # install from a local zip
+openclaw plugins install -l ./extensions/voice-call # link (no copy) for dev
+openclaw plugins install @openclaw/voice-call # install from npm
+```
+
+##### 方式一： npm打包
+```shell
+npm pack # 将生成 .tgz 产物 /HTMLgtMK-redis-channel-1.1.3.tgz
+```
+
+openclaw 安装 plugins:
+```
+openclaw plugins install ./HTMLgtMK-redis-channel-1.1.3.tgz
+```
+
+##### 方式二：本地目录安装
+
+将以下文件复制到目录：
 - `dist/`
 - `openclaw.plugin.json`
 - `package.json`
 
-### 4. 配置 OpenClaw
+openclaw 安装：
+```shell
+openclaw plugins install ./
+```
+
+
+#### 4. 配置 OpenClaw
 
 在 `~/.openclaw/openclaw.json` 中添加：
 
@@ -46,7 +85,7 @@ npm run build
 }
 ```
 
-## 📋 配置参数
+### 📋 配置参数
 
 | 参数 | 类型 | 必填 | 说明 | 默认值 |
 |------|------|------|------|--------|
@@ -62,23 +101,18 @@ npm run build
 | `autoExecute` | boolean | ❌ | 是否自动执行命令 | `false` |
 | `showSenderPrefix` | boolean | ❌ | 是否显示发送者前缀 | `true` |
 
-## 🧪 测试
+### 🧪 测试
 
-### 发送消息（模拟外部系统 → OpenClaw）
-
-```bash
-npm run test:pub -- -t "你好，OpenClaw!" -s "user123" -n "测试用户"
-```
-
-### 接收消息（监听 OpenClaw → 外部系统）
+#### 发送消息（模拟外部系统 → OpenClaw）
 
 ```bash
-npm run test:sub
+redis-cli -h 127.0.0.1 -p 6379 PUBLISH "openclaw:device:node-sub-1" '{"senderId":"test","text":"你好， 我是cli"}'
 ```
 
-## 📋 消息格式
 
-### 入站消息（外部 → OpenClaw）
+### 📋 消息格式
+
+#### 入站消息（外部 → OpenClaw）
 
 ```json
 {
@@ -92,7 +126,7 @@ npm run test:sub
 }
 ```
 
-### 出站消息（OpenClaw → 外部）
+#### 出站消息（OpenClaw → 外部）
 
 ```json
 {
@@ -104,7 +138,7 @@ npm run test:sub
 }
 ```
 
-## 🔌 多账号配置示例
+### 🔌 多账号配置示例
 
 ```json
 {
@@ -129,9 +163,24 @@ npm run test:sub
 }
 ```
 
-## 📝 变更日志
+### 📁 源码结构
 
-### 最新版本 (2026-03-06)
+```
+src/
+├── index.ts                 # 主入口文件
+└── lib/
+    ├── types.ts             # 类型定义
+    ├── redis-client.ts      # Redis 客户端管理
+    ├── message-handler.ts   # 消息处理逻辑
+    ├── message-sender.ts    # 消息发送逻辑
+    ├── heartbeat.ts         # 心跳功能
+    ├── logger.ts            # 统一日志系统
+    └── message-dispatcher.ts # 消息分发逻辑
+```
+
+### 📝 变更日志
+
+#### 最新版本 (2026-03-06)
 
 **功能增强**
 - 新增统一的日志系统 (`src/lib/logger.ts`)，桥接到 OpenClaw 日志
@@ -145,7 +194,7 @@ npm run test:sub
 - 统一日志接口：所有组件使用统一的日志系统
 - 消息处理分离：入站消息处理与分发逻辑分离
 
-### v1.1.2 (2026-03-05)
+#### v1.1.2 (2026-03-05)
 
 **心跳功能**
 - 新增 `heartbeatInterval` 配置项（默认 20000ms）
@@ -153,7 +202,7 @@ npm run test:sub
 - 定时写入 `devices:<deviceId>:heartbeat` 到 Redis（TTL 60 秒）
 - 支持优雅关闭时停止心跳
 
-### v1.1.1 (2026-03-05)
+#### v1.1.1 (2026-03-05)
 
 **API 适配更新**
 - `gateway.start` → `gateway.startAccount`，使用新的 `params` 参数结构
@@ -171,7 +220,7 @@ npm run test:sub
 - `GatewayAdapter`: 同时支持 `start` 和 `startAccount` 方法
 - `ChannelPluginConfig`: 新增可选的 `isEnabled` 和 `isConfigured` 方法
 
-### v1.1.0 (2026-03-05)
+#### v1.1.0 (2026-03-05)
 
 **新增配置参数**
 - 新增 `deviceId` (必填): 设备唯一标识符
