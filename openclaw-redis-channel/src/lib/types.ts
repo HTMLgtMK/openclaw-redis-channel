@@ -12,6 +12,10 @@ export interface RedisChannelAccountConfig {
   publishChannel?: string;
   senderNamePrefix?: string;
   messageFormat?: 'json' | 'text';
+  // NEW: Message routing config
+  targetSession?: string;        // Target session ID (default: agent:main:main)
+  autoExecute?: boolean;         // Auto-execute commands in messages (default: false)
+  showSenderPrefix?: boolean;    // Add [Sender] prefix to message text (default: true)
 }
 
 /**

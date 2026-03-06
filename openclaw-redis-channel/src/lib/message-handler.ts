@@ -1,18 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
-import { 
-  InboundMessagePayload, 
-  NormalizedMessage, 
-  RedisChannelAccountConfig 
+import {
+  InboundMessagePayload,
+  NormalizedMessage,
+  RedisChannelAccountConfig
 } from './types';
+import type { ChannelLogSink } from 'openclaw/plugin-sdk';
+import type { ILogger } from './logger';
 
 export interface MessageHandlerDeps {
-  logger: {
-    info: (msg: string, ...args: any[]) => void;
-    warn: (msg: string, ...args: any[]) => void;
-    error: (msg: string, ...args: any[]) => void;
-    debug: (msg: string, ...args: any[]) => void;
-  };
-  emitMessage: (msg: NormalizedMessage) => void;
+  logger: ILogger;
+  emitMessage: (msg: NormalizedMessage) => void | Promise<void>;
 }
 
 export function handleInboundMessage(
@@ -39,20 +36,38 @@ export function handleInboundMessage(
       return;
     }
 
+    // Build message text with optional sender prefix
+    let messageText = payload.text;
+    if (account.showSenderPrefix !== false) {
+      const sender = payload.senderName || payload.senderId || 'Unknown';
+      messageText = `[${sender}] ${payload.text}`;
+    }
+
     const normalized: NormalizedMessage = {
       id: `redis-${uuidv4()}`,
       channel: 'redis-channel',
       accountId: account.deviceId,
       senderId: payload.senderId,
       senderName: `${account.senderNamePrefix || ''}${payload.senderName || payload.senderId}`.trim(),
-      text: payload.text,
+      text: messageText,
       timestamp: payload.timestamp || Date.now(),
       isGroup: payload.isGroup || false,
       groupId: payload.groupId,
-      metadata: payload.metadata
+      metadata: {
+        ...payload.metadata,
+        autoExecute: account.autoExecute || false,
+        targetSession: account.targetSession || 'agent:main:main',
+        originalText: payload.text,
+        source: 'redis-channel'
+      }
     };
 
-    deps.emitMessage(normalized);
+    const result = deps.emitMessage(normalized);
+    if (result instanceof Promise) {
+      result.catch(err => {
+        deps.logger.error(`Error in emitMessage: ${err}`);
+      });
+    }
     deps.logger.debug(`✓ Received message from ${normalized.senderName}: "${normalized.text.slice(0, 50)}..."`);
 
   } catch (err) {

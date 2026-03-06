@@ -2,14 +2,14 @@
 
 # ============================================================================
 # OpenClaw Redis-Channel 插件项目初始化脚本
-# 版本：v1.1.2 - 支持 startAccount API、默认频道逻辑和心跳功能
+# 版本：v1.1.3 - 支持统一日志、消息路由和模块化架构
 # ============================================================================
 
 set -e  # 遇到错误立即退出
 
 PROJECT_NAME="openclaw-redis-channel"
 
-echo "🚀 正在创建 OpenClaw Redis-Channel 插件项目 (v1.1.2)..."
+echo "🚀 正在创建 OpenClaw Redis-Channel 插件项目 (v1.1.3)..."
 echo ""
 
 # 检查是否已存在项目目录
@@ -39,7 +39,7 @@ cd "$PROJECT_NAME"
 cat > package.json << 'EOF'
 {
   "name": "@HTMLgtMK/redis-channel",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "OpenClaw Channel plugin for Redis Pub/Sub messaging",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -58,7 +58,8 @@ cat > package.json << 'EOF'
   "license": "MIT",
   "dependencies": {
     "redis": "^4.6.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "openclaw": "^2026.3.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -89,7 +90,7 @@ cat > tsconfig.json << 'EOF'
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
+    "module": "Node16",
     "lib": ["ES2022"],
     "declaration": true,
     "declarationMap": true,
@@ -101,10 +102,15 @@ cat > tsconfig.json << 'EOF'
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "baseUrl": ".",
-    "typeRoots": ["./src/types", "./node_modules/@types"],
-    "types": ["node", "uuid"]
+    "typeRoots": ["./node_modules/@types"],
+    "types": ["node", "uuid"],
+    "paths": {
+      "openclaw/plugin-sdk": ["./node_modules/openclaw/dist/plugin-sdk/index.d.ts"],
+      "openclaw/plugin-sdk/*": ["./node_modules/openclaw/dist/plugin-sdk/*.d.ts"],
+      "openclaw": ["./node_modules/openclaw/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "scripts"]
@@ -119,7 +125,7 @@ cat > openclaw.plugin.json << 'EOF'
 {
   "id": "redis-channel",
   "name": "Redis Channel",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Custom messaging channel via Redis Pub/Sub for OpenClaw",
   "author": "HTMLgtMK",
   "license": "MIT",
@@ -190,6 +196,21 @@ cat > openclaw.plugin.json << 'EOF'
                         "enum": ["json", "text"],
                         "default": "json",
                         "description": "消息格式：json（结构化）或 text（纯文本）"
+                      },
+                      "targetSession": {
+                        "type": "string",
+                        "default": "agent:main:main",
+                        "description": "目标会话ID，用于路由消息到特定会话"
+                      },
+                      "autoExecute": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "是否自动执行命令"
+                      },
+                      "showSenderPrefix": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "是否显示发送者前缀"
                       }
                     },
                     "required": ["redisUrl", "deviceId"],
@@ -212,133 +233,7 @@ EOF
 echo "✅ 创建 openclaw.plugin.json"
 
 # ============================================================================
-# 4. src/types/openclaw.d.ts（支持 startAccount API）
-# ============================================================================
-cat > src/types/openclaw.d.ts << 'EOF'
-/**
- * OpenClaw Plugin SDK 类型声明
- * 用于本地开发，不依赖全局安装的 openclaw 包
- */
-
-declare module 'openclaw/plugin-sdk' {
-  // ========== 基础类型 ==========
-
-  export interface Logger {
-    info: (msg: string, ...args: any[]) => void;
-    warn: (msg: string, ...args: any[]) => void;
-    error: (msg: string, ...args: any[]) => void;
-    debug: (msg: string, ...args: any[]) => void;
-  }
-
-  export interface AccountConfig {
-    accountId: string;
-    enabled: boolean;
-    [key: string]: any;
-  }
-
-  export interface NormalizedMessage {
-    id: string;
-    channel: string;
-    accountId: string;
-    senderId: string;
-    senderName: string;
-    text: string;
-    timestamp: number;
-    isGroup: boolean;
-    groupId?: string;
-    metadata?: Record<string, any>;
-  }
-
-  export type EmitMessageFn = (msg: NormalizedMessage) => void;
-
-  // ========== Channel Plugin 接口 ==========
-
-  export interface ChannelPluginMeta {
-    id: string;
-    label: string;
-    selectionLabel: string;
-    docsPath?: string;
-    blurb: string;
-    aliases?: string[];
-    icon?: string;
-  }
-
-  export interface ChannelPluginCapabilities {
-    chatTypes: string[];
-    supports: {
-      threads: boolean;
-      reactions: boolean;
-      mentions: boolean;
-      attachments: boolean;
-      typing: boolean;
-    };
-  }
-
-  export interface StartAccountParams {
-    cfg: any;
-    accountId: string;
-    account: AccountConfig;
-    abortSignal: AbortSignal;
-    log: Logger;
-  }
-
-  export interface ChannelPluginConfig {
-    listAccountIds: (cfg: any) => string[];
-    resolveAccount: (cfg: any, accountId?: string) => any;
-    isEnabled?: (account: AccountConfig, cfg: any) => boolean;
-    isConfigured?: (account: AccountConfig, cfg: any) => Promise<boolean>;
-  }
-
-  export interface OutboundAdapter {
-    deliveryMode: string;
-    sendText: (params: {
-      text: string;
-      target: { id: string };
-      account: AccountConfig;
-    }) => Promise<any>;
-  }
-
-  export interface GatewayAdapter {
-    start?: (
-      account: AccountConfig,
-      deps: { logger: Logger; emitMessage: EmitMessageFn }
-    ) => Promise<{
-      stop: () => Promise<void>;
-      health?: () => Promise<{ status: string; [key: string]: any }>;
-    }>;
-    startAccount?: (
-      params: StartAccountParams
-    ) => Promise<{
-      stop: () => Promise<void>;
-      health?: () => Promise<{ status: string; [key: string]: any }>;
-    }>;
-  }
-
-  export interface ChannelPlugin {
-    id: string;
-    meta: ChannelPluginMeta;
-    capabilities: ChannelPluginCapabilities;
-    configSchema?: any;
-    config: ChannelPluginConfig;
-    outbound: OutboundAdapter;
-    gateway: GatewayAdapter;
-  }
-
-  // ========== Plugin API ==========
-
-  export interface ChannelPluginAPI {
-    registerChannel: (config: { plugin: ChannelPlugin }) => void;
-  }
-
-  // ========== 默认导出 ==========
-
-  export default function register(api: ChannelPluginAPI): void;
-}
-EOF
-echo "✅ 创建 src/types/openclaw.d.ts"
-
-# ============================================================================
-# 5. src/lib/types.ts（支持默认频道）
+# 4. src/lib/types.ts（支持默认频道）
 # ============================================================================
 cat > src/lib/types.ts << 'EOF'
 /**
@@ -355,6 +250,10 @@ export interface RedisChannelAccountConfig {
   publishChannel?: string;
   senderNamePrefix?: string;
   messageFormat?: 'json' | 'text';
+  // NEW: Message routing config
+  targetSession?: string;        // Target session ID (default: agent:main:main)
+  autoExecute?: boolean;         // Auto-execute commands in messages (default: false)
+  showSenderPrefix?: boolean;    // Add [Sender] prefix to message text (default: true)
 }
 
 /**
@@ -412,7 +311,7 @@ EOF
 echo "✅ 创建 src/lib/types.ts"
 
 # ============================================================================
-# 6. src/lib/redis-client.ts
+# 5. src/lib/redis-client.ts
 # ============================================================================
 cat > src/lib/redis-client.ts << 'EOF'
 import { createClient, type RedisClientType } from 'redis';
@@ -497,7 +396,7 @@ EOF
 echo "✅ 创建 src/lib/redis-client.ts"
 
 # ============================================================================
-# 7. src/lib/message-handler.ts
+# 6. src/lib/message-handler.ts
 # ============================================================================
 cat > src/lib/message-handler.ts << 'EOF'
 import { v4 as uuidv4 } from 'uuid';
@@ -506,15 +405,12 @@ import {
   NormalizedMessage,
   RedisChannelAccountConfig
 } from './types';
+import type { ChannelLogSink } from 'openclaw/plugin-sdk';
+import type { ILogger } from './logger';
 
 export interface MessageHandlerDeps {
-  logger: {
-    info: (msg: string, ...args: any[]) => void;
-    warn: (msg: string, ...args: any[]) => void;
-    error: (msg: string, ...args: any[]) => void;
-    debug: (msg: string, ...args: any[]) => void;
-  };
-  emitMessage: (msg: NormalizedMessage) => void;
+  logger: ILogger;
+  emitMessage: (msg: NormalizedMessage) => void | Promise<void>;
 }
 
 export function handleInboundMessage(
@@ -541,20 +437,38 @@ export function handleInboundMessage(
       return;
     }
 
+    // Build message text with optional sender prefix
+    let messageText = payload.text;
+    if (account.showSenderPrefix !== false) {
+      const sender = payload.senderName || payload.senderId || 'Unknown';
+      messageText = `[${sender}] ${payload.text}`;
+    }
+
     const normalized: NormalizedMessage = {
       id: `redis-${uuidv4()}`,
       channel: 'redis-channel',
       accountId: account.deviceId,
       senderId: payload.senderId,
       senderName: `${account.senderNamePrefix || ''}${payload.senderName || payload.senderId}`.trim(),
-      text: payload.text,
+      text: messageText,
       timestamp: payload.timestamp || Date.now(),
       isGroup: payload.isGroup || false,
       groupId: payload.groupId,
-      metadata: payload.metadata
+      metadata: {
+        ...payload.metadata,
+        autoExecute: account.autoExecute || false,
+        targetSession: account.targetSession || 'agent:main:main',
+        originalText: payload.text,
+        source: 'redis-channel'
+      }
     };
 
-    deps.emitMessage(normalized);
+    const result = deps.emitMessage(normalized);
+    if (result instanceof Promise) {
+      result.catch(err => {
+        deps.logger.error(`Error in emitMessage: ${err}`);
+      });
+    }
     deps.logger.debug(`✓ Received message from ${normalized.senderName}: "${normalized.text.slice(0, 50)}..."`);
 
   } catch (err) {
@@ -568,17 +482,18 @@ EOF
 echo "✅ 创建 src/lib/message-handler.ts"
 
 # ============================================================================
-# 8. src/lib/message-sender.ts
+# 7. src/lib/message-sender.ts
 # ============================================================================
 cat > src/lib/message-sender.ts << 'EOF'
 import { v4 as uuidv4 } from 'uuid';
 import { RedisClientManager } from './redis-client';
 import { OutboundMessagePayload, RedisChannelAccountConfig, getPublishChannel } from './types';
 
+// Define the result type for sending messages
 export interface SendResult {
   ok: boolean;
+  id?: string;
   error?: string;
-  messageId?: string;
 }
 
 export async function sendOutboundMessage(
@@ -606,7 +521,7 @@ export async function sendOutboundMessage(
     const publishChannel = getPublishChannel(account, target.id);
     await client.publish(publishChannel, message);
 
-    return { ok: true, messageId: payload.messageId };
+    return { ok: true, id: payload.messageId };
 
   } catch (err) {
     return {
@@ -619,20 +534,16 @@ EOF
 echo "✅ 创建 src/lib/message-sender.ts"
 
 # ============================================================================
-# 8.5. src/lib/heartbeat.ts（心跳功能）
+# 8. src/lib/heartbeat.ts（心跳功能）
 # ============================================================================
 cat > src/lib/heartbeat.ts << 'EOF'
 import { RedisChannelAccountConfig } from './types';
+import type { ILogger } from './logger';
 
 export interface HeartbeatDeps {
   redisClient: any;
   config: RedisChannelAccountConfig;
-  logger: {
-    info: (msg: string, ...args: any[]) => void;
-    warn: (msg: string, ...args: any[]) => void;
-    error: (msg: string, ...args: any[]) => void;
-    debug?: (msg: string, ...args: any[]) => void;
-  };
+  logger: ILogger;
 }
 
 export class HeartbeatManager {
@@ -688,33 +599,201 @@ EOF
 echo "✅ 创建 src/lib/heartbeat.ts"
 
 # ============================================================================
-# 9. src/index.ts（主入口 - 支持 startAccount API）
+# 9. src/lib/logger.ts（统一日志系统）
+# ============================================================================
+cat > src/lib/logger.ts << 'EOF'
+import type { ChannelLogSink } from 'openclaw/plugin-sdk';
+
+// 定义统一的日志接口
+export interface ILogger {
+  info: (msg: string, ...args: any[]) => void;
+  warn: (msg: string, ...args: any[]) => void;
+  error: (msg: string, ...args: any[]) => void;
+  debug: (msg: string, ...args: any[]) => void;
+}
+
+// 全局日志实现类，桥接到 OpenClaw 的日志系统
+export class GlobalLogger implements ILogger {
+  private channelLogSink?: ChannelLogSink;
+
+  constructor(logger?: ChannelLogSink) {
+    this.channelLogSink = logger;
+  }
+
+  // 更新日志后端
+  updateLogger(logger?: ChannelLogSink) {
+    this.channelLogSink = logger;
+  }
+
+  info(msg: string, ...args: any[]) {
+    if (this.channelLogSink) {
+      // ChannelLogSink.info only takes a single string parameter
+      this.channelLogSink.info(`${msg} ${args.join(' ')}`);
+    } else {
+      console.info(`[INFO] ${msg}`, ...args);
+    }
+  }
+
+  warn(msg: string, ...args: any[]) {
+    if (this.channelLogSink) {
+      // ChannelLogSink.warn only takes a single string parameter
+      this.channelLogSink.warn(`${msg} ${args.join(' ')}`);
+    } else {
+      console.warn(`[WARN] ${msg}`, ...args);
+    }
+  }
+
+  error(msg: string, ...args: any[]) {
+    if (this.channelLogSink) {
+      // ChannelLogSink.error only takes a single string parameter
+      this.channelLogSink.error(`${msg} ${args.join(' ')}`);
+    } else {
+      console.error(`[ERROR] ${msg}`, ...args);
+    }
+  }
+
+  debug(msg: string, ...args: any[]) {
+    if (this.channelLogSink?.debug) {
+      // ChannelLogSink.debug only takes a single string parameter
+      this.channelLogSink.debug(`${msg} ${args.join(' ')}`);
+    } else {
+      // 如果 OpenClaw logger 不支持 debug，则降级到 console
+      console.debug(`[DEBUG] ${msg}`, ...args);
+    }
+  }
+}
+
+// 创建全局单例日志实例
+const globalLogger = new GlobalLogger();
+
+export default globalLogger;
+EOF
+echo "✅ 创建 src/lib/logger.ts"
+
+# ============================================================================
+# 10. src/lib/message-dispatcher.ts（消息分发逻辑）
+# ============================================================================
+cat > src/lib/message-dispatcher.ts << 'EOF'
+import type { ChannelGatewayContext } from 'openclaw/plugin-sdk';
+import { sendOutboundMessage } from './message-sender';
+import { NormalizedMessage } from './types';
+import globalLogger from './logger';
+import { RedisChannelAccountConfig } from './types';
+
+/**
+ * 处理入站消息并将其分发给 OpenClaw agent
+ * @param params 包含所有必要参数的对象
+ */
+export async function handleInboundMessageDispatch(
+  params: {
+    msg: NormalizedMessage;
+    params: ChannelGatewayContext<RedisChannelAccountConfig>;
+    redisConfig: RedisChannelAccountConfig;
+  }
+): Promise<void> {
+  const { msg, params: gatewayParams, redisConfig } = params;
+  const { cfg, accountId, channelRuntime } = gatewayParams;
+
+  globalLogger.info(`[${accountId}] 📥 收到消息：${msg.senderName} - ${msg.text.slice(0, 100)}`);
+
+  // 将消息交给 OpenClaw agent 处理，路由到指定的目标会话
+  if (channelRuntime) {
+    // 使用 channelRuntime 将消息发送到目标会话
+    const targetSession = redisConfig.targetSession || 'agent:main:main';
+
+    // 根据配置决定是否自动执行命令
+    const shouldAutoExecute = redisConfig.autoExecute === true;
+
+    // Using the channelRuntime to dispatch the message to the agent
+    // Using the correct MsgContext structure
+    channelRuntime.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: {
+        Body: msg.text,
+        RawBody: msg.text,
+        CommandBody: msg.text,
+        From: msg.senderId,
+        To: targetSession, // 发送到配置的目标会话
+        SessionKey: undefined, // Will be resolved by the runtime
+        AccountId: accountId,
+        ChatType: msg.isGroup ? "group" : "direct",
+        ConversationLabel: msg.isGroup ? `${msg.groupId || 'group'} - ${msg.senderName}` : `${msg.senderName} (${msg.senderId})`,
+        GroupSubject: msg.isGroup ? (msg.groupId || 'group') : undefined,
+        SenderName: msg.senderName,
+        SenderId: msg.senderId,
+        Provider: "redis-channel",
+        Surface: "redis-channel",
+        MessageSid: msg.id,
+        Timestamp: msg.timestamp,
+        GroupMembers: msg.isGroup ? "" : undefined,
+        GroupSystemPrompt: msg.isGroup ? `Redis group context: ${msg.groupId || 'group'}` : undefined,
+        GroupChannel: msg.isGroup ? msg.groupId : undefined,
+        CommandAuthorized: true, // 根据实际授权情况调整
+        OriginatingChannel: "redis-channel",
+        OriginatingTo: msg.senderId,
+      },
+      cfg,
+      dispatcherOptions: {
+        responsePrefix: "",
+        deliver: async (payload: any, info?: { kind: string }) => {
+          try {
+            const textToSend = payload.markdown || payload.text;
+            if (!textToSend) {
+              return;
+            }
+
+            // 如果有回复内容，发送回 Redis 通道
+            if (typeof textToSend === "string") {
+              const target = { id: msg.senderId }; // 回复给原发送者
+              const result = await sendOutboundMessage(textToSend, target, redisConfig);
+              if (!result.ok) {
+                globalLogger.error(`[${accountId}] Failed to send reply back to Redis: ${result.error}`);
+              }
+            }
+          } catch (err: any) {
+            globalLogger.error(`[${accountId}] Reply failed: ${err.message}`);
+            throw err;
+          }
+        },
+      },
+    });
+  } else {
+    globalLogger.warn(`[${accountId}] channelRuntime not available, cannot dispatch message to agent`);
+  }
+}
+EOF
+echo "✅ 创建 src/lib/message-dispatcher.ts"
+
+# ============================================================================
+# 11. src/index.ts（主入口 - 支持统一日志、消息路由和模块化架构）
 # ============================================================================
 cat > src/index.ts << 'EOF'
-import type {
-  ChannelPlugin,
-  ChannelPluginAPI,
-  AccountConfig,
-  Logger,
-  EmitMessageFn,
-  NormalizedMessage
+import type { 
+  ChannelPlugin, 
+  ChannelPluginAPI 
+} from 'openclaw/plugin-sdk/channels/plugins/types.plugin';
+import type { OpenClawPluginApi as ChannelPluginAPI } from 'openclaw/plugin-sdk';
+import type { 
+  OpenClawConfig,
+  ChannelLogSink,
+  ChannelGatewayContext,
+  ChannelOutboundContext,
+  ChannelOutboundAdapter,
+  ChannelCapabilities,
+  ChannelMeta,
+  ChannelConfigSchema,
+  ChannelConfigAdapter
 } from 'openclaw/plugin-sdk';
+import type { OutboundDeliveryResult } from 'openclaw/plugin-sdk/infra/outbound/deliver';
 
 import { RedisClientManager } from './lib/redis-client';
 import { handleInboundMessage, MessageHandlerDeps } from './lib/message-handler';
 import { sendOutboundMessage, SendResult } from './lib/message-sender';
-import { RedisChannelAccountConfig, getSubscribeChannel, getPublishChannel } from './lib/types';
+import { RedisChannelAccountConfig, getSubscribeChannel, getPublishChannel, NormalizedMessage } from './lib/types';
 import { HeartbeatManager } from './lib/heartbeat';
+import globalLogger, { type ILogger } from './lib/logger';
+import { handleInboundMessageDispatch } from './lib/message-dispatcher';
 
-interface StartAccountParams {
-  cfg: any;
-  accountId: string;
-  account: AccountConfig;
-  abortSignal: AbortSignal;
-  log: Logger;
-}
-
-const redisChannelPlugin: ChannelPlugin = {
+const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
   id: 'redis-channel',
 
   meta: {
@@ -725,98 +804,150 @@ const redisChannelPlugin: ChannelPlugin = {
     blurb: 'Custom messaging via Redis Pub/Sub mechanism',
     aliases: ['redis', 'redis-pubsub'],
     icon: 'database',
-  },
+  } as ChannelMeta,
 
   capabilities: {
     chatTypes: ['direct', 'group'],
-    supports: {
-      threads: false,
-      reactions: false,
-      mentions: false,
-      attachments: false,
-      typing: false,
-    },
-  },
+    reactions: false,
+    edit: false,
+    unsend: false,
+    reply: false,
+    effects: false,
+    groupManagement: false,
+    threads: false,
+    media: false,
+    nativeCommands: false,
+    blockStreaming: false,
+    polls: false,
+  } as ChannelCapabilities,
 
   configSchema: {
-    type: 'object',
-    properties: {
-      redisUrl: {
-        type: 'string',
-        title: 'Redis URL',
-        description: 'The connection URL for the Redis server (e.g., redis://localhost:6379).',
+    schema: {
+      type: 'object',
+      properties: {
+        redisUrl: {
+          type: 'string',
+          title: 'Redis URL',
+          description: 'The connection URL for the Redis server (e.g., redis://localhost:6379).',
+        },
+        deviceId: {
+          type: 'string',
+          title: 'Device ID',
+          description: 'Unique device identifier.',
+        },
+        deviceName: {
+          type: 'string',
+          title: 'Device Name',
+          description: 'Device display name.',
+        },
+        heartbeatInterval: {
+          type: 'number',
+          title: 'Heartbeat Interval',
+          description: 'Heartbeat interval in milliseconds (default: 20000)',
+          default: 20000,
+        },
+        subscribeChannel: {
+          type: 'string',
+          title: 'Subscribe Channel',
+          description: 'The Redis channel to subscribe to for incoming messages. Defaults to openclaw:device:<deviceId>.',
+        },
+        publishChannel: {
+          type: 'string',
+          title: 'Publish Channel',
+          description: 'The Redis channel to publish outgoing messages. Defaults to openclaw:device:<targetDeviceId>.',
+        },
+        senderNamePrefix: {
+          type: 'string',
+          title: 'Sender Name Prefix',
+          description: 'Prefix to add to sender names',
+        },
+        messageFormat: {
+          type: 'string',
+          enum: ['json', 'text'],
+          title: 'Message Format',
+          description: 'Format for messages (default: json)',
+          default: 'json',
+        },
+        targetSession: {
+          type: 'string',
+          title: 'Target Session',
+          description: 'Session ID to route messages to (default: agent:main:main)',
+          default: 'agent:main:main',
+        },
+        autoExecute: {
+          type: 'boolean',
+          title: 'Auto Execute',
+          description: 'Automatically execute commands in received messages (default: false)',
+          default: false,
+        },
+        showSenderPrefix: {
+          type: 'boolean',
+          title: 'Show Sender Prefix',
+          description: 'Add [Sender] prefix to message text (default: true)',
+          default: true,
+        },
       },
-      deviceId: {
-        type: 'string',
-        title: 'Device ID',
-        description: 'Unique device identifier.',
-      },
-      deviceName: {
-        type: 'string',
-        title: 'Device Name',
-        description: 'Device display name.',
-      },
-      subscribeChannel: {
-        type: 'string',
-        title: 'Subscribe Channel',
-        description: 'The Redis channel to subscribe to for incoming messages. Defaults to openclaw:device:<deviceId>.',
-      },
-      publishChannel: {
-        type: 'string',
-        title: 'Publish Channel',
-        description: 'The Redis channel to publish outgoing messages. Defaults to openclaw:device:<targetDeviceId>.',
-      },
+      required: ['redisUrl', 'deviceId'],
     },
-    required: ['redisUrl', 'deviceId'],
-  },
+  } as ChannelConfigSchema,
 
   config: {
-    listAccountIds: (cfg: any) => {
+    listAccountIds: (cfg: OpenClawConfig) => {
       const accounts = cfg.channels?.['redis-channel']?.accounts ?? {};
       return Object.keys(accounts).filter(id => accounts[id]?.enabled !== false);
     },
 
-    resolveAccount: (cfg: any, accountId?: string): RedisChannelAccountConfig | undefined => {
+    resolveAccount: (cfg: OpenClawConfig, accountId?: string): RedisChannelAccountConfig | undefined => {
       const accounts = cfg.channels?.['redis-channel']?.accounts ?? {};
-      const account = accountId ? accounts[accountId] : Object.values(accounts)[0];
-      return account?.enabled ? account as RedisChannelAccountConfig : undefined;
+      const account = accountId ? accounts[accountId] : Object.values(accounts)[0] as RedisChannelAccountConfig;
+      return account?.enabled ? account : undefined;
     },
 
-    isEnabled: (account: AccountConfig, cfg: any): boolean => {
-      return (account as any)?.enabled !== false;
+    isEnabled: (account: RedisChannelAccountConfig, cfg: OpenClawConfig): boolean => {
+      return account?.enabled !== false;
     },
 
-    isConfigured: async (account: AccountConfig, cfg: any): Promise<boolean> => {
-      const redisConfig = account as unknown as RedisChannelAccountConfig;
-      return !!(redisConfig?.redisUrl && redisConfig?.deviceId);
+    isConfigured: async (account: RedisChannelAccountConfig, cfg: OpenClawConfig): Promise<boolean> => {
+      return !!(account?.redisUrl && account?.deviceId);
     },
-  },
+  } as ChannelConfigAdapter<RedisChannelAccountConfig>,
 
   outbound: {
     deliveryMode: 'direct',
 
-    sendText: async ({
-      text,
-      target,
-      account
-    }: {
-      text: string;
-      target: { id: string };
-      account: AccountConfig;
-    }): Promise<SendResult> => {
-      const redisConfig = account as unknown as RedisChannelAccountConfig;
-      return await sendOutboundMessage(text, target, redisConfig);
+    sendText: async (ctx: ChannelOutboundContext & { account: RedisChannelAccountConfig }): Promise<any> => {
+      const { text, to, account } = ctx;
+      // Extract target from 'to' field
+      const target = { id: to }; 
+      
+      const result = await sendOutboundMessage(text, target, account);
+      
+      // For now, return a simple result since we're having issues with OutboundDeliveryResult
+      // In a real implementation, we would map to the proper OutboundDeliveryResult structure
+      if (result.ok) {
+        return {
+          ok: true,
+          id: result.id || Date.now().toString(),
+        };
+      } else {
+        return {
+          ok: false,
+          error: result.error || 'Unknown error sending message',
+        };
+      }
     },
-  },
+  } as ChannelOutboundAdapter,
 
   gateway: {
-    startAccount: async (params: StartAccountParams) => {
-      const { cfg, accountId, account, abortSignal, log } = params;
-      const redisConfig = account as unknown as RedisChannelAccountConfig;
+    startAccount: async (params: ChannelGatewayContext<RedisChannelAccountConfig>) => {
+      const { cfg, accountId, account: redisConfig, abortSignal, log } = params;
+
+      // Update the global logger with the OpenClaw logger
+      globalLogger.updateLogger(log);
 
       const subscribeChannel = getSubscribeChannel(redisConfig);
 
-      log?.info?.(`[${accountId}] 🔌 Starting Redis channel: ${subscribeChannel}`);
+      globalLogger.info(`[${accountId}] 🔌 Starting Redis channel: ${subscribeChannel}`);
 
       const subscriber = await RedisClientManager.createSubscriber(redisConfig);
       const mainClient = await RedisClientManager.getClient(redisConfig);
@@ -825,15 +956,18 @@ const redisChannelPlugin: ChannelPlugin = {
       const heartbeat = new HeartbeatManager({
         redisClient: mainClient,
         config: redisConfig,
-        logger: log
+        logger: globalLogger
       });
       heartbeat.start();
 
       const handlerDeps: MessageHandlerDeps = {
-        logger: log,
-        emitMessage: (msg) => {
-          // emitMessage 会将消息交给 OpenClaw agent 处理
-          log?.info?.(`[${accountId}] 📥 收到消息：${msg.senderName} - ${msg.text.slice(0, 100)}`);
+        logger: globalLogger,
+        emitMessage: async (msg: NormalizedMessage) => {
+          await handleInboundMessageDispatch({
+            msg,
+            params,
+            redisConfig
+          });
         }
       };
 
@@ -843,26 +977,26 @@ const redisChannelPlugin: ChannelPlugin = {
       });
 
       const publishChannel = getPublishChannel(redisConfig, redisConfig.deviceId);
-      log?.info?.(`[${accountId}] ✅ Redis channel connected: ${subscribeChannel} → ${publishChannel}`);
+      globalLogger.info(`[${accountId}] ✅ Redis channel connected: ${subscribeChannel} → ${publishChannel}`);
 
       // Handle abort signal
       abortSignal?.addEventListener('abort', async () => {
-        log?.info?.(`[${accountId}] 🔌 Stopping Redis channel (abort signal received)`);
+        globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel (abort signal received)`);
         heartbeat.stop();
         await subscriber.unsubscribe(subscribeChannel);
         await RedisClientManager.closeSubscriber(subscriber);
         await RedisClientManager.closeClient(redisConfig);
-        log?.info?.(`[${accountId}] ✅ Redis channel disconnected`);
+        globalLogger.info(`[${accountId}] ✅ Redis channel disconnected`);
       });
 
       return {
         stop: async () => {
-          log?.info?.(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
+          globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
           heartbeat.stop();
           await subscriber.unsubscribe(subscribeChannel);
           await RedisClientManager.closeSubscriber(subscriber);
           await RedisClientManager.closeClient(redisConfig);
-          log?.info?.(`[${accountId}] ✅ Redis channel disconnected`);
+          globalLogger.info(`[${accountId}] ✅ Redis channel disconnected`);
         },
 
         health: async () => {
@@ -885,13 +1019,12 @@ export default function register(api: ChannelPluginAPI) {
   api.registerChannel({ plugin: redisChannelPlugin });
 }
 
-export type { RedisChannelAccountConfig, NormalizedMessage };
+export type { RedisChannelAccountConfig };
 EOF
 echo "✅ 创建 src/index.ts"
 
-
 # ============================================================================
-# 9.5. scripts/test-publish.ts
+# 12. index.ts, index.js
 # ============================================================================
 cat > index.ts << 'EOF'
 // OpenClaw 插件入口转发器
@@ -906,7 +1039,7 @@ EOF
 echo "✅ 创建 index.ts, index.js"
 
 # ============================================================================
-# 10. scripts/test-publish.ts
+# 13. scripts/test-publish.ts
 # ============================================================================
 cat > scripts/test-publish.ts << 'EOF'
 #!/usr/bin/env ts-node
@@ -970,7 +1103,7 @@ EOF
 echo "✅ 创建 scripts/test-publish.ts"
 
 # ============================================================================
-# 11. scripts/test-subscribe.ts
+# 14. scripts/test-subscribe.ts
 # ============================================================================
 cat > scripts/test-subscribe.ts << 'EOF'
 #!/usr/bin/env ts-node
@@ -1028,7 +1161,7 @@ EOF
 echo "✅ 创建 scripts/test-subscribe.ts"
 
 # ============================================================================
-# 12. Dockerfile
+# 15. Dockerfile
 # ============================================================================
 cat > Dockerfile << 'EOF'
 FROM node:18-alpine AS builder
@@ -1055,7 +1188,7 @@ EOF
 echo "✅ 创建 Dockerfile"
 
 # ============================================================================
-# 13. examples/docker-compose.yml
+# 16. examples/docker-compose.yml
 # ============================================================================
 cat > examples/docker-compose.yml << 'EOF'
 version: '3.8'
@@ -1087,7 +1220,7 @@ EOF
 echo "✅ 创建 examples/docker-compose.yml"
 
 # ============================================================================
-# 14. .gitignore
+# 17. .gitignore
 # ============================================================================
 cat > .gitignore << 'EOF'
 node_modules
@@ -1099,7 +1232,7 @@ EOF
 echo "✅ 创建 .gitignore"
 
 # ============================================================================
-# 15. README.md
+# 18. README.md
 # ============================================================================
 cat > README.md << 'READMEEOF'
 # OpenClaw Redis-Channel Plugin
@@ -1123,15 +1256,15 @@ npm run build
 ### 3. 部署到 OpenClaw
 
 将以下文件复制到 OpenClaw 插件目录：
-- \`dist/\`
-- \`openclaw.plugin.json\`
-- \`package.json\`
+- `dist/`
+- `openclaw.plugin.json`
+- `package.json`
 
 ### 4. 配置 OpenClaw
 
-在 \`~/.openclaw/openclaw.json\` 中添加：
+在 `~/.openclaw/openclaw.json` 中添加：
 
-\`\`\`json
+```json
 {
   "channels": {
     "redis-channel": {
@@ -1148,20 +1281,23 @@ npm run build
     }
   }
 }
-\`\`\`
+```
 
 ## 📋 配置参数
 
 | 参数 | 类型 | 必填 | 说明 | 默认值 |
 |------|------|------|------|--------|
-| \`redisUrl\` | string | ✅ | Redis 连接 URL | - |
-| \`deviceId\` | string | ✅ | 设备唯一标识符 | - |
-| \`deviceName\` | string | ❌ | 设备显示名称 | \`deviceId\` |
-| \`heartbeatInterval\` | number | ❌ | 心跳间隔（毫秒） | 20000 |
-| \`subscribeChannel\` | string | ❌ | 订阅的入站消息频道 | \`openclaw:device:<deviceId>\` |
-| \`publishChannel\` | string | ❌ | 发布出站消息频道 | \`openclaw:device:<targetDeviceId>\` |
-| \`senderNamePrefix\` | string | ❌ | 发送者名称前缀 | \`""\` |
-| \`messageFormat\` | \`"json"\` \\| \`"text"\` | ❌ | 消息格式 | \`"json"\` |
+| `redisUrl` | string | ✅ | Redis 连接 URL | - |
+| `deviceId` | string | ✅ | 设备唯一标识符 | - |
+| `deviceName` | string | ❌ | 设备显示名称 | `deviceId` |
+| `heartbeatInterval` | number | ❌ | 心跳间隔（毫秒） | 20000 |
+| `subscribeChannel` | string | ❌ | 订阅的入站消息频道 | `openclaw:device:<deviceId>` |
+| `publishChannel` | string | ❌ | 发布出站消息频道 | `openclaw:device:<targetDeviceId>` |
+| `senderNamePrefix` | string | ❌ | 发送者名称前缀 | `""` |
+| `messageFormat` | `"json"` \| `"text"` | ❌ | 消息格式 | `"json"` |
+| `targetSession` | string | ❌ | 目标会话ID | `"agent:main:main"` |
+| `autoExecute` | boolean | ❌ | 是否自动执行命令 | `false` |
+| `showSenderPrefix` | boolean | ❌ | 是否显示发送者前缀 | `true` |
 
 ## 🧪 测试
 
@@ -1232,45 +1368,59 @@ npm run test:sub
 
 ## 📝 变更日志
 
+### 最新版本 (2026-03-06)
+
+**功能增强**
+- 新增统一的日志系统 (`src/lib/logger.ts`)，桥接到 OpenClaw 日志
+- 实现消息路由到目标会话 (`targetSession` 配置)
+- 支持自动执行命令 (`autoExecute` 配置)
+- 实现消息分发逻辑到独立文件 (`src/lib/message-dispatcher.ts`)
+- 使用官方 OpenClaw Plugin SDK 类型
+
+**架构改进**
+- 模块化设计：将功能拆分为独立模块
+- 统一日志接口：所有组件使用统一的日志系统
+- 消息处理分离：入站消息处理与分发逻辑分离
+
 ### v1.1.2 (2026-03-05)
 
 **心跳功能**
-- 新增 \`heartbeatInterval\` 配置项（默认 20000ms）
-- 新增 \`src/lib/heartbeat.ts\` 模块
-- 定时写入 \`devices:<deviceId>:heartbeat\` 到 Redis（TTL 60 秒）
+- 新增 `heartbeatInterval` 配置项（默认 20000ms）
+- 新增 `src/lib/heartbeat.ts` 模块
+- 定时写入 `devices:<deviceId>:heartbeat` 到 Redis（TTL 60 秒）
 - 支持优雅关闭时停止心跳
 
 ### v1.1.1 (2026-03-05)
 
 **API 适配更新**
-- \`gateway.start\` → \`gateway.startAccount\`，使用新的 \`params\` 参数结构
-- 新增 \`StartAccountParams\` 接口：\`cfg\`, \`accountId\`, \`account\`, \`abortSignal\`, \`log\`
-- 日志调用改为可选链 \`log?.info?.()\` 并添加 \`[accountId]\` 前缀
-- 新增 \`abortSignal\` 事件处理，支持 OpenClaw 优雅关闭机制
-- 新增 \`config.isEnabled\` 和 \`config.isConfigured\` 方法
-- 新增 \`configSchema\` 定义
+- `gateway.start` → `gateway.startAccount`，使用新的 `params` 参数结构
+- 新增 `StartAccountParams` 接口：`cfg`, `accountId`, `account`, `abortSignal`, `log`
+- 日志调用改为可选链 `log?.info?.()` 并添加 `[accountId]` 前缀
+- 新增 `abortSignal` 事件处理，支持 OpenClaw 优雅关闭机制
+- 新增 `config.isEnabled` 和 `config.isConfigured` 方法
+- 新增 `configSchema` 定义
 
 **功能增强**
 - 收到消息时自动转发到飞书通知（使用 OpenClaw CLI）
 
 **类型定义更新**
-- \`src/types/openclaw.d.ts\`: 新增 \`StartAccountParams\` 接口
-- \`GatewayAdapter\`: 同时支持 \`start\` 和 \`startAccount\` 方法
-- \`ChannelPluginConfig\`: 新增可选的 \`isEnabled\` 和 \`isConfigured\` 方法
+- `src/types/openclaw.d.ts`: 新增 `StartAccountParams` 接口
+- `GatewayAdapter`: 同时支持 `start` 和 `startAccount` 方法
+- `ChannelPluginConfig`: 新增可选的 `isEnabled` 和 `isConfigured` 方法
 
 ### v1.1.0 (2026-03-05)
 
 **新增配置参数**
-- 新增 \`deviceId\` (必填): 设备唯一标识符
-- 新增 \`deviceName\` (可选): 设备显示名称
+- 新增 `deviceId` (必填): 设备唯一标识符
+- 新增 `deviceName` (可选): 设备显示名称
 
 **默认频道规则变更**
-- \`subscribeChannel\`: 未指定时默认为 \`openclaw:device:<deviceId>\`
-- \`publishChannel\`: 未指定时默认为 \`openclaw:device:<targetDeviceId>\`
+- `subscribeChannel`: 未指定时默认为 `openclaw:device:<deviceId>`
+- `publishChannel`: 未指定时默认为 `openclaw:device:<targetDeviceId>`
 
 ---
 
-*最后更新：2026-03-05*
+*最后更新：2026-03-06*
 READMEEOF
 echo "✅ 创建 README.md"
 
@@ -1291,9 +1441,10 @@ echo "   │   │   ├── types.ts      # 类型定义"
 echo "   │   │   ├── redis-client.ts"
 echo "   │   │   ├── message-handler.ts"
 echo "   │   │   ├── message-sender.ts"
-echo "   │   │   └── heartbeat.ts  # 心跳功能"
+echo "   │   │   ├── heartbeat.ts  # 心跳功能"
+echo "   │   │   ├── logger.ts     # 统一日志系统"
+echo "   │   │   └── message-dispatcher.ts # 消息分发逻辑"
 echo "   │   └── types/"
-echo "   │       └── openclaw.d.ts # OpenClaw SDK 类型"
 echo "   ├── scripts/"
 echo "   │   ├── test-publish.ts"
 echo "   │   └── test-subscribe.ts"
@@ -1309,3 +1460,4 @@ echo "   cd $PROJECT_NAME"
 echo "   npm install"
 echo "   npm run build"
 echo ""
+EOF

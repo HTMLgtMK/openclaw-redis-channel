@@ -2,10 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { RedisClientManager } from './redis-client';
 import { OutboundMessagePayload, RedisChannelAccountConfig, getPublishChannel } from './types';
 
+// Define the result type for sending messages
 export interface SendResult {
   ok: boolean;
+  id?: string;
   error?: string;
-  messageId?: string;
 }
 
 export async function sendOutboundMessage(
@@ -33,7 +34,7 @@ export async function sendOutboundMessage(
     const publishChannel = getPublishChannel(account, target.id);
     await client.publish(publishChannel, message);
 
-    return { ok: true, messageId: payload.messageId };
+    return { ok: true, id: payload.messageId };
 
   } catch (err) {
     return {

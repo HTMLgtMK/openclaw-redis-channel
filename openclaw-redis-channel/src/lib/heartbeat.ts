@@ -1,14 +1,10 @@
 import { RedisChannelAccountConfig } from './types';
+import type { ILogger } from './logger';
 
 export interface HeartbeatDeps {
   redisClient: any;
   config: RedisChannelAccountConfig;
-  logger: {
-    info: (msg: string, ...args: any[]) => void;
-    warn: (msg: string, ...args: any[]) => void;
-    error: (msg: string, ...args: any[]) => void;
-    debug?: (msg: string, ...args: any[]) => void;
-  };
+  logger: ILogger;
 }
 
 export class HeartbeatManager {

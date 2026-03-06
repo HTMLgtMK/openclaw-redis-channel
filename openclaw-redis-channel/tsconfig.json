@@ -15,8 +15,13 @@
     "resolveJsonModule": true,
     "moduleResolution": "node",
     "baseUrl": ".",
-    "typeRoots": ["./src/types", "./node_modules/@types"],
-    "types": ["node", "uuid"]
+    "typeRoots": ["./node_modules/@types"],
+    "types": ["node", "uuid"],
+    "paths": {
+      "openclaw/plugin-sdk": ["./node_modules/openclaw/dist/plugin-sdk/index.d.ts"],
+      "openclaw/plugin-sdk/*": ["./node_modules/openclaw/dist/plugin-sdk/*.d.ts"],
+      "openclaw": ["./node_modules/openclaw/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "scripts"]

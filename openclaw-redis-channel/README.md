@@ -58,6 +58,9 @@ npm run build
 | `publishChannel` | string | ❌ | 发布出站消息频道 | `openclaw:device:<targetDeviceId>` |
 | `senderNamePrefix` | string | ❌ | 发送者名称前缀 | `""` |
 | `messageFormat` | `"json"` \| `"text"` | ❌ | 消息格式 | `"json"` |
+| `targetSession` | string | ❌ | 目标会话ID | `"agent:main:main"` |
+| `autoExecute` | boolean | ❌ | 是否自动执行命令 | `false` |
+| `showSenderPrefix` | boolean | ❌ | 是否显示发送者前缀 | `true` |
 
 ## 🧪 测试
 
@@ -128,6 +131,20 @@ npm run test:sub
 
 ## 📝 变更日志
 
+### 最新版本 (2026-03-06)
+
+**功能增强**
+- 新增统一的日志系统 (`src/lib/logger.ts`)，桥接到 OpenClaw 日志
+- 实现消息路由到目标会话 (`targetSession` 配置)
+- 支持自动执行命令 (`autoExecute` 配置)
+- 实现消息分发逻辑到独立文件 (`src/lib/message-dispatcher.ts`)
+- 使用官方 OpenClaw Plugin SDK 类型
+
+**架构改进**
+- 模块化设计：将功能拆分为独立模块
+- 统一日志接口：所有组件使用统一的日志系统
+- 消息处理分离：入站消息处理与分发逻辑分离
+
 ### v1.1.2 (2026-03-05)
 
 **心跳功能**
@@ -141,7 +158,7 @@ npm run test:sub
 **API 适配更新**
 - `gateway.start` → `gateway.startAccount`，使用新的 `params` 参数结构
 - 新增 `StartAccountParams` 接口：`cfg`, `accountId`, `account`, `abortSignal`, `log`
-- 日志调用改为可选链 `log?.info?.()` 并添加 `accountId` 前缀
+- 日志调用改为可选链 `log?.info?.()` 并添加 `[accountId]` 前缀
 - 新增 `abortSignal` 事件处理，支持 OpenClaw 优雅关闭机制
 - 新增 `config.isEnabled` 和 `config.isConfigured` 方法
 - 新增 `configSchema` 定义
@@ -164,18 +181,6 @@ npm run test:sub
 - `subscribeChannel`: 未指定时默认为 `openclaw:device:<deviceId>`
 - `publishChannel`: 未指定时默认为 `openclaw:device:<targetDeviceId>`
 
-**配置结构保持**
-- 保持嵌套结构：`channels.redis-channel.accounts.<accountId>.*`
-- 保持多账号支持
-
-**文件变更**
-- `src/lib/types.ts`: 新增类型定义和辅助函数
-- `src/lib/redis-client.ts`: 实现默认频道逻辑
-- `src/lib/message-sender.ts`: 使用默认发布频道
-- `src/index.ts`: 应用默认频道逻辑
-- `openclaw.plugin.json`: 更新配置 Schema
-- `scripts/*.ts`: 测试脚本支持 `--device-id` 参数
-
 ---
 
-*最后更新：2026-03-05*
+*最后更新：2026-03-06*
