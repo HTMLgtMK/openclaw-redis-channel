@@ -38,24 +38,24 @@ export function getPublishChannel(config: RedisChannelAccountConfig, targetDevic
   return `openclaw:device:${targetDeviceId}`;
 }
 
-export interface InboundMessagePayload {
-  senderId: string;
-  senderName?: string;
-  text: string;
-  timestamp?: number;
-  isGroup?: boolean;
-  groupId?: string;
-  metadata?: Record<string, any>;
+/**
+ * 统一消息结构体（双向兼容）
+ * Inbound 和 Outbound 使用相同格式，确保 GBOT 和 GLife 可以互相解析
+ */
+export interface RedisMessagePayload {
+  senderId: string;          // 发送者 ID（必填）
+  senderName?: string;       // 发送者名称（可选）
+  text: string;              // 消息内容（必填）
+  timestamp: number;         // 时间戳（必填）
+  isGroup?: boolean;         // 是否群组消息（可选）
+  groupId?: string;          // 群组 ID（可选）
+  messageId?: string;        // 消息 ID（可选，用于追踪）
+  metadata?: Record<string, any>;  // 扩展元数据（可选）
 }
 
-export interface OutboundMessagePayload {
-  from: string;
-  to: string;
-  text: string;
-  timestamp: number;
-  messageId: string;
-  metadata?: Record<string, any>;
-}
+// 兼容旧版本的类型别名
+export type InboundMessagePayload = RedisMessagePayload;
+export type OutboundMessagePayload = RedisMessagePayload;
 
 export interface NormalizedMessage {
   id: string;
