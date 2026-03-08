@@ -27,9 +27,8 @@ export async function sendOutboundMessage(
       messageId: uuidv4()
     };
 
-    const message = account.messageFormat === 'text'
-      ? text
-      : JSON.stringify(payload);
+    // 强制使用 JSON 格式发送
+    const message = JSON.stringify(payload);
 
     const publishChannel = getPublishChannel(account, target.id);
     await client.publish(publishChannel, message);

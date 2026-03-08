@@ -25,7 +25,7 @@ import { handleInboundMessageDispatch } from './lib/message-dispatcher';
 // Get version from package.json
 const VERSION = require('../package.json').version;
 
-const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
+export const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
   id: 'redis-channel',
 
   meta: {
@@ -146,6 +146,28 @@ const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
 
   outbound: {
     deliveryMode: 'direct',
+
+    resolveTarget: (params: {
+      cfg?: any;
+      to?: string;
+      allowFrom?: string[];
+      accountId?: string | null;
+      mode?: any;
+    }) => {
+      // For redis-channel, target is the target device ID (e.g., 'node-parent')
+      // We accept any non-empty string as a valid target
+      const { to } = params;
+      if (!to || typeof to !== 'string' || to.trim() === '') {
+        return {
+          ok: false,
+          error: new Error('Target device ID is required'),
+        };
+      }
+      return {
+        ok: true,
+        to: to.trim(),
+      };
+    },
 
     sendText: async (ctx: ChannelOutboundContext & { account: RedisChannelAccountConfig }): Promise<any> => {
       const { text, to, account } = ctx;
@@ -472,9 +494,5 @@ const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
     }
   },
 };
-
-export default function register(api: ChannelPluginAPI) {
-  api.registerChannel({ plugin: redisChannelPlugin });
-}
 
 export type { RedisChannelAccountConfig };
