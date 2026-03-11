@@ -21,7 +21,7 @@ export async function handleInboundMessageDispatch(
   const { msg, params: gatewayParams, redisConfig } = params;
   const { cfg, accountId } = gatewayParams;
 
-  globalLogger.info(`[${accountId}] 📥 收到消息：${msg.senderName} - ${msg.text.slice(0, 100)}`);
+  globalLogger.debug(`[${accountId}] 📥 收到消息：${msg.senderName} - ${msg.text.slice(0, 100)}`);
 
   try {
     // 获取 PluginRuntime（包含 channel.reply API）
@@ -75,10 +75,25 @@ export async function handleInboundMessageDispatch(
 
             // 2. 写入通知文件，让人类可以在 webui 上查看
             try {
-              const noticeFile = path.join('/home/admin/.openclaw/workspace/memory/redis-notices.md');
+              const workspacePath = (cfg as any)?.workspace || process.env.OPENCLAW_WORKSPACE || '/home/openclaw/.openclaw/workspace';
+              globalLogger.debug(`workspacePath: ${workspacePath}`)
+              const noticeDir = path.join(workspacePath, "memory")
+              const noticeFile = path.join(workspacePath, 'memory', 'redis-notices.md');
               const noticeContent = `# Redis 消息通知\n\n## ${new Date().toISOString()}\n\n📬 **Redis 消息回复**\n\n**来自**: ${msg.senderName} (${msg.senderId})\n**消息**: ${msg.text}\n\n**Agent 回复**:\n${textToSend}\n\n---\n\n`;
-              fs.promises.appendFile(noticeFile, noticeContent, 'utf-8')
-              globalLogger.info(`[${accountId}] ✅ 通知已写入 ${noticeFile}`);
+              
+              if (!fs.existsSync(noticeDir)){
+                fs.mkdirSync(noticeDir);
+                if (!fs.existsSync(noticeDir)) {
+                  globalLogger.error(`[${accountId}] ❌ 创建写入通知文件失败: ${noticeDir}`);
+                  return;
+                }
+                globalLogger.error(`[${accountId}] ✅ 创建写入通知文件成功: ${noticeDir}`);
+              }
+              fs.promises.appendFile(noticeFile, noticeContent, 'utf-8').then(()=>{
+                globalLogger.info(`[${accountId}] ✅ 通知已写入 ${noticeFile}`);
+              }, (reason)=>{
+                globalLogger.error(`[${accountId}] 写入通知文件失败：${reason}`);
+              });
             } catch (e) {
               globalLogger.error(`[${accountId}] 写入通知文件失败：${e}`);
             }
