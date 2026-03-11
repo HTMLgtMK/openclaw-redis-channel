@@ -2,6 +2,23 @@
  * Redis Channel 插件内部类型定义
  */
 
+/**
+ * Gateway handle returned by startAccount
+ * Provides lifecycle management and health check capabilities
+ */
+export interface RedisChannelGatewayHandle {
+  /**
+   * Stop the gateway account
+   * @param reason - Optional reason for stopping (e.g., 'user-requested', 'connection-error')
+   */
+  stop: (reason?: string) => Promise<void>;
+  /**
+   * Check the health status of the Redis connection
+   * @returns Health status object with status, latency, and optional error
+   */
+  health: () => Promise<{ status: string; latency?: number; error?: string }>;
+}
+
 export interface RedisChannelAccountConfig {
   enabled: boolean;
   redisUrl: string;

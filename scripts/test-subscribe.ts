@@ -4,7 +4,7 @@
  * 用法：npm run test:sub -- --redis "redis://localhost:6379" --device-id "node-local"
  */
 
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { program } from 'commander';
 
 program
@@ -17,21 +17,20 @@ const opts = program.opts();
 
 async function main() {
   const subscribeChannel = opts.channel || `openclaw:device:${opts.deviceId}`;
-  const client = createClient({ url: opts.redis });
+  const client = new Redis(opts.redis);
 
   client.on('error', (err) => console.error('Redis error:', err));
   client.on('connect', () => console.log(`🔌 Connected to ${opts.redis}`));
 
-  await client.connect();
-
   console.log(`👂 Subscribing to ${subscribeChannel}... (Ctrl+C to exit)`);
 
+  // ioredis: subscribe returns a Promise that resolves when subscription is active
   await client.subscribe(subscribeChannel, (message: string) => {
     try {
       const payload = JSON.parse(message);
       console.log('\n📩 Received from OpenClaw:');
-      console.log(`   From: ${payload.from}`);
-      console.log(`   To: ${payload.to}`);
+      console.log(`   From: ${payload.senderId || payload.from}`);
+      console.log(`   To: ${payload.to || opts.deviceId}`);
       console.log(`   Text: ${payload.text}`);
       console.log(`   Time: ${new Date(payload.timestamp).toLocaleTimeString()}`);
       console.log('─'.repeat(50));

@@ -1,7 +1,6 @@
 import type {
   ChannelPlugin
 } from 'openclaw/plugin-sdk/channels/plugins/types.plugin';
-import type { OpenClawPluginApi as ChannelPluginAPI } from 'openclaw/plugin-sdk';
 import type {
   OpenClawConfig,
   ChannelGatewayContext,
@@ -12,15 +11,13 @@ import type {
   ChannelConfigSchema,
   ChannelConfigAdapter
 } from 'openclaw/plugin-sdk';
-import type { ChannelStatusAdapter, ChannelStatusIssue, ChannelAccountSnapshot } from 'openclaw/plugin-sdk/channels/plugins/types';
+import type { ChannelStatusIssue } from 'openclaw/plugin-sdk/channels/plugins/types';
 
 import { RedisClientManager } from './lib/redis-client';
-import { handleInboundMessage, MessageHandlerDeps } from './lib/message-handler';
 import { sendOutboundMessage, SendResult } from './lib/message-sender';
-import { RedisChannelAccountConfig, getSubscribeChannel, getPublishChannel, NormalizedMessage } from './lib/types';
-import { HeartbeatManager } from './lib/heartbeat';
+import { RedisChannelAccountConfig, getSubscribeChannel, getPublishChannel, NormalizedMessage, RedisChannelGatewayHandle } from './lib/types';
 import globalLogger, { type ILogger } from './lib/logger';
-import { handleInboundMessageDispatch } from './lib/message-dispatcher';
+import { startGatewayAccount } from './lib/gateway-manager';
 
 // Get version from package.json
 const VERSION = require('../package.json').version;
@@ -52,6 +49,19 @@ export const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
     blockStreaming: false,
     polls: false,
   } as ChannelCapabilities,
+
+  messaging: {
+    targetResolver: {
+      hint: "Use device ID (e.g., 'node-sub-1', 'node-parent')",
+      looksLikeId: (raw: string, normalized?: string): boolean => {
+        const trimmed = raw.trim();
+        if (!trimmed) return false;
+        if (/^node-/.test(trimmed)) return true;
+        if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) return true;
+        return false;
+      },
+    },
+  },
 
   configSchema: {
     schema: {
@@ -146,6 +156,7 @@ export const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
 
   outbound: {
     deliveryMode: 'direct',
+    textChunkLimit: 10000,
 
     resolveTarget: (params: {
       cfg?: any;
@@ -169,13 +180,43 @@ export const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
       };
     },
 
-    sendText: async (ctx: ChannelOutboundContext & { account: RedisChannelAccountConfig }): Promise<any> => {
-      const { text, to, account } = ctx;
+    sendText: async (ctx: ChannelOutboundContext & { account?: RedisChannelAccountConfig }): Promise<any> => {
+      const { text, to, accountId, cfg } = ctx as any;
+
+      // Get account from cfg using accountId, or use first available account
+      let account: RedisChannelAccountConfig | undefined;
+      const accounts = cfg?.channels?.['redis-channel']?.accounts;
+
+      if (accounts) {
+        if (accountId && accounts[accountId]) {
+          account = accounts[accountId];
+          globalLogger.info(`Account loaded by accountId: ${accountId}`);
+        } else {
+          // No accountId or not found, use first available account
+          const accountIds = Object.keys(accounts);
+          if (accountIds.length > 0) {
+            account = accounts[accountIds[0]];
+            globalLogger.info(`Using first available account: ${accountIds[0]}`);
+          }
+        }
+      }
+
+      // Validate account config
+      if (!account) {
+        console.error(`[redis-channel] sendText: No redis-channel account configured`);
+        return { ok: false as const, error: 'No redis-channel account configured' };
+      }
+
+      if (!account.redisUrl || !account.deviceId) {
+        console.error(`[redis-channel] sendText: INVALID ACCOUNT CONFIG`);
+        return { ok: false as const, error: 'Account configuration missing' };
+      }
+
       // Extract target from 'to' field
-      const target = { id: to }; 
-      
+      const target = { id: to };
+
       const result = await sendOutboundMessage(text, target, account);
-      
+
       // For now, return a simple result since we're having issues with OutboundDeliveryResult
       // In a real implementation, we would map to the proper OutboundDeliveryResult structure
       if (result.ok) {
@@ -190,96 +231,36 @@ export const redisChannelPlugin: ChannelPlugin<RedisChannelAccountConfig> = {
         };
       }
     },
+
+    sendMedia: async (ctx: ChannelOutboundContext & { account?: RedisChannelAccountConfig } & { mediaUrl: string }): Promise<any> => {
+      // Get account from cfg (same as sendText)
+      const { accountId, cfg } = ctx as any;
+      let account: RedisChannelAccountConfig | undefined;
+      const accounts = cfg?.channels?.['redis-channel']?.accounts;
+
+      if (accounts) {
+        if (accountId && accounts[accountId]) {
+          account = accounts[accountId];
+        } else {
+          const accountIds = Object.keys(accounts);
+          if (accountIds.length > 0) {
+            account = accounts[accountIds[0]];
+          }
+        }
+      }
+
+      if (!account) {
+        return { ok: false as const, error: 'No redis-channel account configured' };
+      }
+
+      globalLogger.error(`sendMedia called (not supported)`);
+      return { ok: false as const, error: 'Media not supported by redis-channel' };
+    },
   } as ChannelOutboundAdapter,
 
   gateway: {
-    startAccount: async (params: ChannelGatewayContext<RedisChannelAccountConfig>) => {
-      const { cfg, accountId, account: redisConfig, abortSignal, log } = params;
-
-      // Update the global logger with the OpenClaw logger
-      globalLogger.updateLogger(log);
-
-      const subscribeChannel = getSubscribeChannel(redisConfig);
-
-      globalLogger.info(`[${accountId}] 🔌 Starting Redis channel v${VERSION}: ${subscribeChannel}`);
-
-      const subscriber = await RedisClientManager.createSubscriber(redisConfig);
-      const mainClient = await RedisClientManager.getClient(redisConfig);
-
-      // Start heartbeat
-      const heartbeat = new HeartbeatManager({
-        redisClient: mainClient,
-        config: redisConfig,
-        logger: globalLogger
-      });
-      heartbeat.start();
-
-      const handlerDeps: MessageHandlerDeps = {
-        logger: globalLogger,
-        emitMessage: async (msg: NormalizedMessage) => {
-          await handleInboundMessageDispatch({
-            msg,
-            params,
-            redisConfig
-          });
-        }
-      };
-
-      // Track if we're shutting down to prevent duplicate handlers
-      let isShuttingDown = false;
-
-      // Redis v4.x: subscribe 返回 Promise，需要 await 确保订阅完成
-      await subscriber.subscribe(subscribeChannel, (message: string) => {
-        if (!isShuttingDown) {
-          handleInboundMessage(message, redisConfig, handlerDeps);
-        }
-      });
-
-      const publishChannel = getPublishChannel(redisConfig, redisConfig.deviceId);
-      globalLogger.info(`[${accountId}] ✅ Redis channel connected: ${subscribeChannel} → ${publishChannel}`);
-
-      // Store the promise to prevent premature resolution
-      const stopFunction = async () => {
-        if (isShuttingDown) return;
-        isShuttingDown = true;
-        
-        globalLogger.info(`[${accountId}] 🔌 Stopping Redis channel: ${subscribeChannel}`);
-        heartbeat.stop();
-        try {
-          await subscriber.unsubscribe(subscribeChannel);
-        } catch (err) {
-          globalLogger.error(`[${accountId}] Error unsubscribing during stop: ${err}`);
-        }
-        await RedisClientManager.closeSubscriber(subscriber);
-        await RedisClientManager.closeClient(redisConfig);
-        globalLogger.info(`[${accountId}] ✅ Redis channel disconnected`);
-      };
-      
-      // Keep the channel running by returning a promise that resolves only when stopped
-      // @see https://github.com/openclaw/openclaw/issues/19854
-      await new Promise<void>((resolve) => {
-        if (isShuttingDown) { resolve(); return; }
-        abortSignal?.addEventListener('abort', ()=>{
-          stopFunction();
-          resolve();
-        }, { once: true });
-      });
-
-      return {
-        stop: stopFunction,
-
-        health: async () => {
-          try {
-            await subscriber.ping();
-            return { status: 'ok', latency: Date.now() };
-          } catch (err) {
-            return {
-              status: 'error',
-              error: err instanceof Error ? err.message : 'Unknown',
-            };
-          }
-        },
-      };
+    startAccount: async (params: ChannelGatewayContext<RedisChannelAccountConfig>): Promise<RedisChannelGatewayHandle> => {
+      return startGatewayAccount(params);
     },
   },
 

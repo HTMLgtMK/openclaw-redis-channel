@@ -33,7 +33,7 @@ export class HeartbeatManager {
           const key = `devices:${config.deviceId}:heartbeat`;
           const value = Date.now().toString();
           // Redis v4.x: use set with EX option instead of setex
-          await redisClient.set(key, value, { EX: 60 });
+          await redisClient.set(key, value, "EX", 60);
           logger.debug?.(`💓 Heartbeat sent for device: ${config.deviceId}`);
         }
       } catch (error) {

@@ -1,7 +1,7 @@
 {
   "id": "redis-channel",
   "name": "Redis Channel",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Custom messaging channel via Redis Pub/Sub for OpenClaw",
   "author": "HTMLgtMK",
   "license": "MIT",
@@ -10,6 +10,10 @@
   "repository": "https://github.com/HTMLgtMK/openclaw-redis-channel",
   "keywords": ["channel", "redis", "pubsub", "messaging"],
   "minOpenClawVersion": "1.0.0",
+  "outbound": {
+    "textChunkLimit": 10000,
+    "deliveryMode": "direct"
+  },
   "configSchema": {
     "type": "object",
     "properties": {

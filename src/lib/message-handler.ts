@@ -4,7 +4,6 @@ import {
   NormalizedMessage,
   RedisChannelAccountConfig
 } from './types';
-import type { ChannelLogSink } from 'openclaw/plugin-sdk';
 import type { ILogger } from './logger';
 
 export interface MessageHandlerDeps {
@@ -136,7 +135,7 @@ export function handleInboundMessage(
   } catch (err) {
     deps.logger.error('✗ 处理消息失败:', {
       error: err instanceof Error ? err.message : String(err),
-      rawMessage: rawMessage.slice(0, 200)
+      rawMessage: rawMessage?.slice(0, 200) ?? "null"
     });
   }
 }

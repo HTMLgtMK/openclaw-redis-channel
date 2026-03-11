@@ -77,7 +77,7 @@ export async function handleInboundMessageDispatch(
             try {
               const noticeFile = path.join('/home/admin/.openclaw/workspace/memory/redis-notices.md');
               const noticeContent = `# Redis 消息通知\n\n## ${new Date().toISOString()}\n\n📬 **Redis 消息回复**\n\n**来自**: ${msg.senderName} (${msg.senderId})\n**消息**: ${msg.text}\n\n**Agent 回复**:\n${textToSend}\n\n---\n\n`;
-              fs.appendFileSync(noticeFile, noticeContent, 'utf-8');
+              fs.promises.appendFile(noticeFile, noticeContent, 'utf-8')
               globalLogger.info(`[${accountId}] ✅ 通知已写入 ${noticeFile}`);
             } catch (e) {
               globalLogger.error(`[${accountId}] 写入通知文件失败：${e}`);

@@ -10,12 +10,28 @@ const plugin = {
   id: 'redis-channel',
   name: 'Redis Channel',
   description: 'Redis Pub/Sub messaging channel for OpenClaw',
+  version: '1.1.3',
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
     // 保存 PluginRuntime 供 channel 使用
     setPluginRuntime(api.runtime);
+
+    // 兼容新旧版本：直接传递完整插件对象
+    // 新版本 OpenClaw 期望 plugin 对象包含所有属性
+    // 旧版本可能只读取部分属性
+    const channelPlugin: ChannelPlugin = {
+      id: redisChannelPlugin.id,
+      meta: redisChannelPlugin.meta,
+      capabilities: redisChannelPlugin.capabilities,
+      messaging: redisChannelPlugin.messaging,
+      configSchema: redisChannelPlugin.configSchema,
+      config: redisChannelPlugin.config,
+      outbound: redisChannelPlugin.outbound,
+      gateway: redisChannelPlugin.gateway,
+    };
+
     // 注册 channel 插件
-    api.registerChannel({ plugin: redisChannelPlugin as ChannelPlugin });
+    api.registerChannel({ plugin: channelPlugin });
   },
 };
 

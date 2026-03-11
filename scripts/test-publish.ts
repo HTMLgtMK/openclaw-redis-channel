@@ -4,7 +4,7 @@
  * 用法：npm run test:pub -- --text "Hello" --sender "user123" --device-id "node-local"
  */
 
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { program } from 'commander';
 
 program
@@ -21,14 +21,12 @@ const opts = program.opts();
 
 async function main() {
   const publishChannel = opts.channel || `openclaw:device:${opts.deviceId}`;
-  const client = createClient({ url: opts.redis });
+  const client = new Redis(opts.redis);
 
   client.on('error', (err) => {
     console.error('Redis error:', err);
     process.exit(1);
   });
-
-  await client.connect();
 
   const payload = {
     senderId: opts.sender,
